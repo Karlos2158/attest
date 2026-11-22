@@ -354,3 +354,7 @@ input[type="range"] { width: 240px; accent-color: var(--accent); }
   .player-head { flex-direction: column; }
   .player-row .pstate { display: none; }
 }
+
+/* Telegram Mini App: учитываем вырезы экрана и высоту окна Telegram */
+body.tg-app { min-height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
+body.tg-app .topbar { padding-top: calc(16px + env(safe-area-inset-top)); }

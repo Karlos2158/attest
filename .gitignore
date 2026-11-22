@@ -6,6 +6,10 @@ venv/
 # сертификаты и ключи локального HTTPS
 certs/
 
+# локальные секреты и настройки публикации
+data/secrets.json
+data/miniapp.json
+
 # журналы и временные файлы
 logs/
 *.log

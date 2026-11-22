@@ -650,8 +650,37 @@ async function api(path, body) {
     body: JSON.stringify(body),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || ('Ошибка ' + r.status));
+  if (!r.ok) {
+    if (data.authRequired) toast('Откройте тренажёр через Telegram — без этого вход закрыт.', 8000);
+    throw new Error(data.error || ('Ошибка ' + r.status));
+  }
   return data;
+}
+
+/* ------------------------------------------------------------------ Telegram Mini App */
+
+async function initTelegram() {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (!tg || !tg.initData) return false;
+  document.body.classList.add('tg-app');
+  try {
+    tg.ready();
+    tg.expand();
+    if (tg.setHeaderColor) tg.setHeaderColor('#f6f3ee');
+    if (tg.setBackgroundColor) tg.setBackgroundColor('#f6f3ee');
+    if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+    const r = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData: tg.initData }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok) state.tgUser = data.user || null;
+    else toast(data.error || 'Не удалось войти через Telegram', 8000);
+  } catch (e) {
+    console.warn('Telegram auth:', e);
+  }
+  return true;
 }
 
 /* ------------------------------------------------------------------ статистика */
@@ -1833,6 +1862,7 @@ async function init() {
   bindUI();
   bindSettings();
   player.loadPrefs();
+  await initTelegram();
   try {
     await loadData();
     applyStage(state.settings.stage, true);

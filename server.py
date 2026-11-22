@@ -6,6 +6,8 @@
 """
 import atexit
 import base64
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -17,6 +19,7 @@ import threading
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -77,6 +80,65 @@ def read_secrets() -> dict:
         return json.loads(SECRETS.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+# ---------------------------------------------------------------- Telegram Mini App
+
+TG_COOKIE = "attest_tg"
+TG_SESSION_DAYS = 30
+TG_AUTH_DAYS = 7
+
+
+def telegram_token() -> str:
+    return str(read_secrets().get("telegram_bot_token") or "").strip()
+
+
+def _sign(token: str, payload: str) -> str:
+    return hmac.new(token.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def telegram_user_from_init(init_data: str):
+    """Проверяет подпись initData от Telegram и возвращает пользователя."""
+    token = telegram_token()
+    if not token or not init_data:
+        return None
+    try:
+        pairs = urllib.parse.parse_qsl(init_data, keep_blank_values=True)
+        data = dict(pairs)
+        given = data.get("hash", "")
+        check = "\n".join(f"{k}={v}" for k, v in sorted(pairs) if k != "hash")
+        secret = hmac.new(b"WebAppData", token.encode("utf-8"), hashlib.sha256).digest()
+        calc = hmac.new(secret, check.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not given or not hmac.compare_digest(calc, given):
+            return None
+        auth_date = int(data.get("auth_date") or 0)
+        if not auth_date or time.time() - auth_date > TG_AUTH_DAYS * 86400:
+            return None
+        user = json.loads(data.get("user") or "{}")
+        return user if user.get("id") else None
+    except Exception:
+        return None
+
+
+def telegram_session_cookie(user_id) -> str:
+    token = telegram_token()
+    payload = f"{int(user_id)}.{int(time.time())}"
+    return payload + "." + _sign(token, payload)
+
+
+def telegram_session_ok(cookie: str) -> bool:
+    token = telegram_token()
+    if not token or not cookie:
+        return False
+    try:
+        user_id, issued, sig = cookie.split(".")
+        payload = f"{user_id}.{issued}"
+        if not hmac.compare_digest(sig, _sign(token, payload)):
+            return False
+        return time.time() - int(issued) <= TG_SESSION_DAYS * 86400
+    except Exception:
+        return False
+
 
 
 # ---------------------------------------------------------------- голос
@@ -488,23 +550,50 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def _send(self, code: int, body: bytes, ctype: str):
+    def _send(self, code: int, body: bytes, ctype: str, headers=None):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         try:
             self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    def _json(self, code: int, obj):
+    def _json(self, code: int, obj, headers=None):
         self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"),
-                   "application/json; charset=utf-8")
+                   "application/json; charset=utf-8", headers)
+
+    def _host_trusted(self) -> bool:
+        host = (self.headers.get("Host") or "").split(":")[0].strip("[]").lower()
+        if host in ("localhost", "127.0.0.1", "::1"):
+            return True
+        try:
+            return host in (lan_ip().lower(), socket.gethostname().lower())
+        except Exception:
+            return False
+
+    def _guard(self) -> bool:
+        """Вне дома (через туннель) пускаем только с подписью Telegram."""
+        if not telegram_token() or self._host_trusted():
+            return True
+        cookie = ""
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == TG_COOKIE:
+                cookie = v
+        if telegram_session_ok(cookie):
+            return True
+        self._json(401, {"error": "Откройте тренажёр через Telegram", "authRequired": True})
+        return False
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path.startswith("/api/") and path != "/api/health" and not self._guard():
+            return
         try:
             if path in ("/", "/index.html"):
                 self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
@@ -512,7 +601,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, DATA)
             elif path == "/api/health":
                 self._json(200, {"ok": True, "defaultModel": DEFAULT_MODEL,
-                                 "lanUrl": lan_url()})
+                                 "lanUrl": lan_url(), "telegram": bool(telegram_token())})
             elif path == "/ca.crt":
                 if CA_FILE.exists():
                     self._send(200, CA_FILE.read_bytes(), "application/x-x509-ca-cert")
@@ -543,6 +632,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.split("?")[0]
+        if path.startswith("/api/") and path != "/api/auth" and not self._guard():
+            return
         try:
             length = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
@@ -550,6 +641,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "bad json"})
 
         try:
+            if path == "/api/auth":
+                user = telegram_user_from_init(str(payload.get("initData") or ""))
+                if not user:
+                    return self._json(401, {"ok": False, "error": "Подпись Telegram неверна или устарела"})
+                cookie = telegram_session_cookie(user["id"])
+                headers = {"Set-Cookie": f"{TG_COOKIE}={cookie}; Path=/; "
+                                         f"Max-Age={TG_SESSION_DAYS * 86400}; HttpOnly; SameSite=Lax"}
+                if self.server.server_port == LAN_PORT or \
+                        (self.headers.get("X-Forwarded-Proto") or "").lower() == "https":
+                    headers["Set-Cookie"] += "; Secure"
+                return self._json(200, {"ok": True, "user": {
+                    "id": user.get("id"),
+                    "name": " ".join(x for x in (user.get("first_name"), user.get("last_name")) if x),
+                    "username": user.get("username"),
+                }}, headers)
             if path == "/api/config":
                 key = str(payload.get("deepseek_api_key", "")).strip()
                 secrets = read_secrets()
@@ -639,6 +745,17 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def lan_ip() -> str:
+    # При включённом VPN первым может оказаться адрес туннеля (10.6.7.1),
+    # поэтому домашнюю сеть 192.168.* выбираем раньше остальных.
+    try:
+        ips = sorted({i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
+                      if i[4] and i[4][0]})
+    except OSError:
+        ips = []
+    for prefix in ("192.168.", "172.", "10."):
+        for ip in ips:
+            if ip.startswith(prefix):
+                return ip
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -671,9 +788,48 @@ def start_lan_server():
     log(f"телефон: {lan_url()}  (или https://{socket.gethostname()}:{LAN_PORT})")
 
 
+BOT_SCRIPT = ROOT / "telegram_bot.py"
+BOT_PID = ROOT / "logs" / "bot.pid"
+_bot_proc = None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def ensure_bot():
+    """Поднимает бота мини-приложения, если есть токен и он ещё не работает."""
+    global _bot_proc
+    if not telegram_token():
+        return
+    try:
+        pid = int(BOT_PID.read_text(encoding="utf-8").strip())
+        if _pid_alive(pid):
+            return
+    except Exception:
+        pass
+    flags = 0
+    if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        _bot_proc = subprocess.Popen([sys.executable, str(BOT_SCRIPT)], cwd=str(ROOT),
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     creationflags=flags)
+        BOT_PID.parent.mkdir(exist_ok=True)
+        BOT_PID.write_text(str(_bot_proc.pid), encoding="utf-8")
+        log(f"telegram: бот запущен (pid {_bot_proc.pid})")
+    except Exception:
+        log("telegram: не удалось запустить бота\n" + traceback.format_exc())
+
+
 def main():
     log(f"Сервер запущен: http://localhost:{PORT}  модель по умолчанию: {DEFAULT_MODEL}")
     start_lan_server()
+    ensure_bot()
     threading.Thread(target=_preload_voice, daemon=True).start()
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
 
