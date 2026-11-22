@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# сертификаты и ключи локального HTTPS
+certs/
+
+# журналы и временные файлы
+logs/
+*.log
+out/
+
+# системный мусор
+.DS_Store
+Thumbs.db
+desktop.ini

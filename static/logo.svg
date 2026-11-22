@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 130" fill="none">
+  <defs>
+    <linearGradient id="g1" x1="20" y1="10" x2="100" y2="110" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c9a227"/>
+      <stop offset=".45" stop-color="#e7c96a"/>
+      <stop offset="1" stop-color="#a87d1c"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="35" y1="30" x2="90" y2="95" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e9a6b8"/>
+      <stop offset=".5" stop-color="#c9a227"/>
+      <stop offset="1" stop-color="#8fb8d8"/>
+    </linearGradient>
+  </defs>
+  <!-- ромб -->
+  <path d="M60 6 L106 42 L60 120 L14 42 Z" stroke="url(#g1)" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M14 42 H106" stroke="url(#g1)" stroke-width="1.6" opacity=".65"/>
+  <!-- птица -->
+  <path d="M44 76 C50 58 62 48 74 50 C68 56 66 62 68 68 C61 66 54 70 50 78 C48 82 45 80 44 76 Z"
+        fill="url(#g2)" opacity=".92"/>
+  <path d="M52 74 C56 66 62 61 68 60" stroke="#fff" stroke-width="1.4" opacity=".7" stroke-linecap="round"/>
+  <path d="M44 84 C52 88 66 88 76 82" stroke="url(#g1)" stroke-width="1.8" stroke-linecap="round" opacity=".8"/>
+</svg>

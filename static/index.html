@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тренажёр аттестации — EGO Bottego</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <img src="/static/logo.svg" class="logo-img" alt="eGO BOTTEGO">
+    <div>
+      <div class="wordmark">eGO <span>BOTTEGO</span></div>
+      <h1>Тренажёр аттестации</h1>
+      <p>Консультант по продажам</p>
+    </div>
+  </div>
+  <div class="stage-switch" role="tablist" aria-label="Аттестация">
+    <button class="stage active" data-stage="first" role="tab">Первая аттестация</button>
+    <button class="stage" data-stage="second" role="tab">Вторая аттестация</button>
+  </div>
+  <div class="top-actions">
+    <span id="modelBadge" class="badge" title="Модель ИИ">ИИ: qwen3:14b</span>
+    <span id="voiceBadge" class="badge muted" title="Нажмите, чтобы выбрать голос">проверка голоса…</span>
+    <button id="settingsBtn" class="icon-btn" title="Настройки">⚙</button>
+  </div>
+  <div id="voiceMenu" class="voice-menu hidden"></div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-mode="quiz">Тренировка</button>
+  <button class="tab" data-mode="player">Плеер</button>
+  <button class="tab" data-mode="ask">Я спрашиваю</button>
+  <button class="tab" data-mode="chat">Чат</button>
+  <button class="tab" data-mode="exam">Экзамен</button>
+  <button class="tab" data-mode="progress">Прогресс</button>
+</nav>
+
+<main>
+  <!-- ТРЕНИРОВКА -->
+  <section id="mode-quiz" class="mode active">
+    <div class="toolbar">
+      <label class="field">
+        <span>Блок</span>
+        <select id="quizBlock"><option value="all">Все блоки</option></select>
+      </label>
+      <button id="quizNew" class="btn ghost">Случайный вопрос</button>
+      <span id="stageHint" class="stage-hint"></span>
+      <span id="quizCounter" class="counter"></span>
+    </div>
+
+    <article class="card question-card">
+      <div class="q-meta"><span id="quizBlockChip" class="chip"></span><span id="quizId" class="chip subtle"></span></div>
+      <h2 id="quizQuestion" class="question-text">Нажмите «Случайный вопрос», чтобы начать</h2>
+      <div class="voice-row">
+        <button id="quizMic" class="mic-btn" title="Ответить голосом (пробел)">🎤</button>
+        <div class="voice-hint">
+          <strong id="quizMicLabel">Ответить голосом</strong>
+          <span>Нажмите и говорите. Распознанный текст можно поправить в поле ниже.</span>
+        </div>
+        <button id="quizRepeat" class="btn ghost" title="Повторить вопрос голосом">🔊 Вопрос</button>
+      </div>
+      <textarea id="quizTranscript" class="transcript" rows="4" placeholder="Здесь появится ваша речь (можно печатать и править вручную)…"></textarea>
+      <div class="row-actions">
+        <button id="quizSubmit" class="btn primary">Проверить ответ</button>
+        <button id="quizShowRef" class="btn ghost">Показать эталон</button>
+        <button id="quizSkip" class="btn ghost">Следующий вопрос</button>
+      </div>
+      <div id="quizReference" class="reference hidden"></div>
+    </article>
+
+    <div id="quizFeedback" class="card feedback hidden"></div>
+  </section>
+
+  <!-- ПЛЕЕР ДЛЯ ЗАУЧИВАНИЯ -->
+  <section id="mode-player" class="mode">
+    <article class="card player-card">
+      <div class="player-head">
+        <div>
+          <h2>Плеер для заучивания</h2>
+          <p class="muted">Отметьте вопросы — плеер прочитает вопрос одним голосом, а эталонный ответ другим. Можно слушать подряд, ставить паузу, повторять весь список несколько раз или без остановки.</p>
+        </div>
+        <div class="player-count" id="playerCount">0 выбрано</div>
+      </div>
+
+      <div class="player-controls">
+        <label class="field">
+          <span>Голос вопросов</span>
+          <select id="playerVoiceQ">
+            <option value="baya">Бая — женский</option>
+            <option value="aidar">Айдар — мужской</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Голос ответов</span>
+          <select id="playerVoiceA">
+            <option value="baya">Бая — женский</option>
+            <option value="aidar">Айдар — мужской</option>
+          </select>
+        </label>
+        <div class="player-buttons">
+          <button id="playerToggle" class="btn primary">▶ Плей</button>
+          <button id="playerStop" class="btn">⏹ Стоп</button>
+          <label class="player-repeat" title="Сколько раз подряд проиграть выбранные вопросы">
+            <span>Повторов</span>
+            <input type="number" id="playerRepeat" min="1" max="99" value="1" inputmode="numeric">
+          </label>
+          <button id="playerLoop" class="btn" title="Повторять выбранные вопросы без остановки">🔁 Бесконечно</button>
+          <button id="playerPrev" class="btn" title="Предыдущий вопрос">⏮</button>
+          <button id="playerNext" class="btn" title="Следующий вопрос">⏭</button>
+        </div>
+      </div>
+
+      <div class="player-now" id="playerNow">Выберите вопросы из списка и нажмите «Плей».</div>
+      <div class="player-bar-wrap"><div class="player-bar" id="playerBar"></div></div>
+
+      <div class="player-tools">
+        <input type="text" id="playerSearch" placeholder="Поиск по номеру или тексту вопроса…" autocomplete="off">
+        <button id="playerSelectAll" class="btn ghost">Выбрать все</button>
+        <button id="playerClearAll" class="btn ghost">Снять все</button>
+      </div>
+      <div id="playerList" class="player-list"></div>
+    </article>
+  </section>
+
+  <!-- Я СПРАШИВАЮ -->
+  <section id="mode-ask" class="mode">
+    <article class="card ask-card">
+      <h2>Спросите что угодно по билетам</h2>
+      <p class="muted">Сформулируйте вопрос голосом — преподаватель ответит вслух и покажет, откуда взят ответ. Можно уточнять: «объясни проще», «приведи пример из магазина».</p>
+      <div class="voice-row">
+        <button id="askMic" class="mic-btn" title="Задать вопрос голосом">🎤</button>
+        <div class="voice-hint">
+          <strong id="askMicLabel">Задать вопрос голосом</strong>
+          <span>После вопроса можно попросить объяснить подробнее.</span>
+        </div>
+        <label class="toggle"><input type="checkbox" id="askAutoSpeak" checked> озвучивать ответ</label>
+      </div>
+      <div class="ask-input-row">
+        <textarea id="askInput" class="transcript" rows="2" placeholder="…или напишите вопрос текстом"></textarea>
+        <button id="askSend" class="btn primary">Спросить</button>
+      </div>
+      <div class="suggestions" id="askSuggestions"></div>
+    </article>
+    <div id="askChat" class="chat"></div>
+  </section>
+
+  <!-- ЧАТ С ТРЕНЕРОМ -->
+  <section id="mode-chat" class="mode">
+    <article class="card ask-card">
+      <div class="chat-head">
+        <div>
+          <h2>Просто чат с тренером</h2>
+          <p class="muted">Говорите своими словами: спросите по теме, попросите совет, разберите ситуацию из магазина. Он ответит и озвучит.</p>
+        </div>
+        <button id="chatClear" class="btn ghost">Новый диалог</button>
+      </div>
+      <div id="chatLog" class="chat"></div>
+      <div class="ask-input-row">
+        <button id="chatMic" class="mic-btn" title="Сказать голосом">🎤</button>
+        <textarea id="chatInput" class="transcript" rows="2" placeholder="Напишите или скажите…"></textarea>
+        <button id="chatSend" class="btn primary">Отправить</button>
+      </div>
+    </article>
+  </section>
+
+  <!-- ЭКЗАМЕН -->
+  <section id="mode-exam" class="mode">
+    <article id="examStartCard" class="card">
+      <h2>Экзамен по экзаменационному списку</h2>
+      <p class="muted" id="examIntro">33 вопроса в случайном порядке. Оценка за каждый ответ, в конце — протокол.</p>
+      <ul class="rules">
+        <li>Вопрос задаётся голосом, вы отвечаете своими словами.</li>
+        <li>Во время экзамена образец ответа не показывается.</li>
+        <li>В конце — средний балл, разбор ошибок и тренировка слабых вопросов.</li>
+      </ul>
+      <button id="examStart" class="btn primary">Начать экзамен</button>
+    </article>
+
+    <article id="examCard" class="card question-card hidden">
+      <div class="q-meta">
+        <span class="chip">Экзамен</span>
+        <span id="examCounter" class="chip subtle"></span>
+        <span id="examTimer" class="chip subtle">00:00</span>
+      </div>
+      <h2 id="examQuestion" class="question-text"></h2>
+      <div class="voice-row">
+        <button id="examMic" class="mic-btn">🎤</button>
+        <div class="voice-hint">
+          <strong id="examMicLabel">Ответить голосом</strong>
+          <span>Говорите спокойно, можно своими словами.</span>
+        </div>
+        <button id="examRepeat" class="btn ghost">🔊 Вопрос</button>
+      </div>
+      <textarea id="examTranscript" class="transcript" rows="4" placeholder="Ваш ответ…"></textarea>
+      <div class="row-actions">
+        <button id="examSubmit" class="btn primary">Ответить</button>
+        <button id="examSkip" class="btn ghost">Пропустить (0)</button>
+        <button id="examFinish" class="btn ghost">Завершить экзамен</button>
+      </div>
+      <div id="examFeedback" class="mini-feedback hidden"></div>
+    </article>
+
+    <div id="examResult" class="card hidden"></div>
+  </section>
+
+  <!-- ПРОГРЕСС -->
+  <section id="mode-progress" class="mode">
+    <div class="stat-grid" id="statGrid"></div>
+    <article class="card">
+      <h2>По блокам</h2>
+      <div id="blockBars" class="bars"></div>
+    </article>
+    <article class="card">
+      <h2>Слабые вопросы</h2>
+      <p class="muted">Сюда попадают вопросы со средним баллом ниже 4. Нажмите «Тренировать», чтобы перейти к ним.</p>
+      <div id="weakList" class="weak-list"></div>
+    </article>
+    <article class="card">
+      <h2>Настройки</h2>
+      <div class="settings-grid">
+        <label class="field">
+          <span>Модель ИИ</span>
+          <select id="modelSelect">
+            <option value="qwen3:8b">qwen3:8b — самая быстрая</option>
+            <option value="qwen3:14b">qwen3:14b — быстро (рекомендуется)</option>
+            <option value="qwen3.8:27b">qwen3.8:27b — точнее, медленнее</option>
+            <option value="deepseek-v4.1-flash-free">DeepSeek V4.1 — бесплатно, через OpenCode</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Голос</span>
+          <select id="voiceSelect">
+            <option value="baya">Бая — женский, мягкий (рекомендуется)</option>
+            <option value="kseniya">Ксения — женский</option>
+            <option value="xenia">Ксения 2 — женский</option>
+            <option value="aidar">Айдар — мужской</option>
+            <option value="baritone">Баритон — низкий мужской, медленнее</option>
+            <option value="eugene">Евгений — мужской</option>
+            <option value="windows">Windows «Ирина» — запасной</option>
+          </select>
+          <div class="key-row">
+            <button id="voiceTest" class="btn ghost">Послушать</button>
+            <span class="muted" id="voiceStatus">проверяю…</span>
+          </div>
+        </label>
+        <label class="field">
+          <span>Скорость речи: <b id="rateValue">1.0</b></span>
+          <input type="range" id="rateSlider" min="0.7" max="1.3" step="0.05" value="1">
+        </label>
+        <label class="field">
+          <span>Ключ DeepSeek API (необязательно, для модели DeepSeek)</span>
+          <div class="key-row">
+            <input type="password" id="deepseekKey" placeholder="sk-…" autocomplete="off">
+            <button id="saveKey" class="btn ghost">Сохранить ключ</button>
+          </div>
+          <span class="muted" id="keyStatus">проверяю…</span>
+        </label>
+        <label class="toggle"><input type="checkbox" id="autoSpeakSetting" checked> озвучивать ответы и разбор</label>
+        <label class="toggle"><input type="checkbox" id="autoNext" checked> автоматически предлагать следующий вопрос</label>
+        <button id="resetStats" class="btn danger">Сбросить прогресс</button>
+      </div>
+    </article>
+  </section>
+</main>
+
+<footer class="footer">
+  <span id="statusLine">Готов</span>
+  <span class="muted">Локальный тренажёр · данные не покидают ваш компьютер, кроме текста запроса к модели ИИ</span>
+</footer>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/static/app.js?v=21"></script>
+</body>
+</html>
